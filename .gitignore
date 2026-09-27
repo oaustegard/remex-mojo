@@ -1,0 +1,5 @@
+# Built binaries
+/polarquant
+/bench/bench_*
+!/bench/bench_*.mojo
+__pycache__/

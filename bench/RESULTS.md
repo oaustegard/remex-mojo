@@ -10,13 +10,13 @@ This file lives next to the comparison driver
 ([`compare.py`](compare.py)) and the per-stage bench binaries
 (`bench_encode.mojo`, `bench_search.mojo`, `bench_twostage.mojo`).
 For broader recall, distribution, and SPECTER2 results see
-[`bench/RESULTS.md`](../../../bench/RESULTS.md) at the repo root.
+[remex's `bench/RESULTS.md`](https://github.com/oaustegard/remex/blob/main/bench/RESULTS.md).
 
 ## RNG parity (since [#40](https://github.com/oaustegard/remex/issues/40))
 
 Mojo's default `--rng numpy` path uses the same stack as NumPy
 (`SeedSequence + PCG64 + Ziggurat`) and produces a `.pq` **byte-identical**
-to Python's `save_pq(Quantizer(d, bits, seed=S).encode(X))` at 1–4 bits.
+to Python's `save_pq(Quantizer(d, bits, seed=S, rotation="haar").encode(X))` at 1–4 bits.
 Pass `--rng xoshiro` to opt back into the legacy xoshiro256++ + Marsaglia
 path; `--params` remains the canonical all-bit-widths bridge between the
 two implementations.
@@ -122,7 +122,6 @@ criteria) — encode still needs work.  Avenues to investigate:
 ## Build
 
 ```bash
-cd remex/mojo
 
 mojo build -I . polarquant.mojo            -o polarquant
 mojo build -I . bench/bench_encode.mojo    -o bench/bench_encode
@@ -138,14 +137,12 @@ The container needs the Mojo compiler — see
 The headline numbers above:
 
 ```bash
-cd remex/mojo
 python bench/compare.py --n 10000 --d 384 --bits 4 --queries 100 --k 10
 ```
 
 Scaling sweep (re-runs `compare.py` per `d`):
 
 ```bash
-cd remex/mojo
 for d in 64 256 384 768; do
   python bench/compare.py --n 10000 --d $d --bits 4 --queries 100 --k 10
 done
@@ -154,7 +151,6 @@ done
 Individual stages directly:
 
 ```bash
-cd remex/mojo
 ./bench/bench_encode    --n 10000 --d 384 --bits 4 --seed 42
 ./bench/bench_search    --n 10000 --d 384 --bits 4 --queries 100 --k 10 --seed 42
 ./bench/bench_twostage  --n 10000 --d 384 --bits 4 --queries 100 --k 10 --seed 42 \

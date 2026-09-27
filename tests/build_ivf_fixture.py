@@ -2,7 +2,7 @@
 
 Run this once before the Mojo test:
 
-    python remex/mojo/tests/build_ivf_fixture.py
+    python3 tests/build_ivf_fixture.py
 
 Outputs (under /tmp/, all .npy float32 / .pq / .params):
   /tmp/_ivf.params              — Quantizer R + boundaries + centroids
@@ -76,7 +76,7 @@ def main() -> None:
     X = rng.standard_normal((N, D)).astype(np.float32)
     Q = rng.standard_normal((N_Q, D)).astype(np.float32)
 
-    q = Quantizer(d=D, bits=BITS, seed=SEED)
+    q = Quantizer(d=D, bits=BITS, seed=SEED, rotation="haar", renorm=False)
     save_params("/tmp/_ivf.params", q)
 
     cv = q.encode(X)

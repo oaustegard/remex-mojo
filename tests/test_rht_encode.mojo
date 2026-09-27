@@ -6,7 +6,7 @@ seed -> PCG64 -> permutation -> sign -> FWHT -> codebook -> encode chain
 agrees with Python. `load_params` is the other route, reading R off disk,
 and has to land on the same bytes.
 
-    python3 remex/mojo/tests/build_rht_fixture.py
+    python3 tests/build_fixtures.py
     mojo run -I . tests/test_rht_encode.mojo
 
 What this cannot catch, measured rather than guessed. It runs one case,

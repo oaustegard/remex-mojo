@@ -2,7 +2,7 @@
 
 Fixtures come from `tests/build_rht_fixture.py`:
 
-    python3 remex/mojo/tests/build_rht_fixture.py
+    python3 tests/build_fixtures.py
     mojo run -I . tests/test_rht.mojo
 
 The anchor is NumPy's `remex.rotation.rht_rotation` — an independent
@@ -64,7 +64,9 @@ def test_block_size_and_rounds() raises:
     assert_true(largest_pow2_divisor(768) == 256)
     assert_true(largest_pow2_divisor(100) == 4)
     # B == d is a single round; otherwise the smallest k with B**k >= d.
-    assert_true(rht_rounds(128, 128) == 1)
+    # Never fewer than two: one round is seed-blind (remex #89).
+    assert_true(rht_rounds(128, 128) == 2)
+    assert_true(rht_rounds(2, 2) == 2)
     assert_true(rht_rounds(384, 128) == 2)
     assert_true(rht_rounds(768, 256) == 2)
     assert_true(rht_rounds(36, 4) == 3)
@@ -82,7 +84,7 @@ def test_byte_parity_with_python() raises:
     _assert_bit_identical(R768, String("/tmp/_rht_R_768_42.npy"), String("d=768 seed=42"))
     # d=36 is B=4 over 3 rounds. An odd round count is the only shape in
     # which a globally inverted sign draw survives to the output — at an
-    # even count it cancels, and every other case here is 1 or 2 rounds.
+    # even count it cancels, and every other case here is 2 rounds.
     var R36 = rht_rotation(36, UInt64(5))
     _assert_bit_identical(R36, String("/tmp/_rht_R_36_5.npy"), String("d=36 seed=5"))
     print("test_byte_parity_with_python: ok")
@@ -115,6 +117,7 @@ def test_incoherence() raises:
     var y = alloc[Float32](d)
     var floor = Float32(1.0 - 1e-6) / Float32(sqrt(Float64(d)))
     var worst: Float32 = Float32(0.0)
+    var total: Float32 = Float32(0.0)
     for spike in range(16):
         for i in range(d):
             x[i] = Float32(0.0)
@@ -126,12 +129,17 @@ def test_incoherence() raises:
             if a > peak:
                 peak = a
         assert_true(peak >= floor)
+        total += peak
         if peak > worst:
             worst = peak
-    print("   worst spike peak (d=128) =", worst, " floor =", floor)
-    # d = 128 is a power of two: one round, one block spanning the row, so a
-    # spike maps to exactly +-1/sqrt(d) everywhere — the attainable floor.
-    assert_true(worst < Float32(2.0) * floor)
+    var mean_peak = total / Float32(16)
+    print("   spike peak (d=128): mean =", mean_peak, " worst =", worst,
+          " floor =", floor)
+    # Mirrors the Python test: the mean peak must stay under twice the mean
+    # max |coordinate| of a uniformly random unit vector, 0.2504 at d=128
+    # (4096 draws, numpy seed 3). Two rounds land at 0.252. The single round
+    # remex used before 1.0 hit the floor exactly, for every seed (#89).
+    assert_true(mean_peak < Float32(2.0 * 0.2504))
     x.free()
     y.free()
     print("test_incoherence: ok")

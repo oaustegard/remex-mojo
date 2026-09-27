@@ -278,7 +278,8 @@ struct Quantizer(Movable):
     def __init__(out self, d: Int, bits: Int, seed: UInt64):
         """Build a Quantizer using the NumPy-compatible RNG.
 
-        Bit-identical to `Python remex.Quantizer(d, bits, seed)` at float32.
+        Bit-identical to `Python remex.Quantizer(d, bits, seed, rotation="haar")`
+        at float32.
         Use `Quantizer.from_xoshiro_seed` for the legacy fast self-contained
         path (not parity-compatible with Python).
         """

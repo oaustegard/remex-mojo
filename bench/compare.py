@@ -82,7 +82,7 @@ def main() -> int:
     Qs = rng.standard_normal((args.queries, args.d), dtype=np.float32)
 
     # --- Python encode ---
-    pq = Quantizer(d=args.d, bits=args.bits, seed=args.seed)
+    pq = Quantizer(d=args.d, bits=args.bits, seed=args.seed, rotation="haar")
     # warmup
     pq.encode(X[:16])
     t0 = time.perf_counter()

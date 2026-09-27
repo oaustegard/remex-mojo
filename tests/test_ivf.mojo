@@ -20,7 +20,7 @@ Closes the Mojo half of issue #61.
 
 Setup (run before this test):
 
-    python remex/mojo/tests/build_ivf_fixture.py
+    python3 tests/build_fixtures.py
 """
 
 from std.testing import assert_equal, assert_true

@@ -1,16 +1,26 @@
-# remex Mojo port (`polarquant`)
+# remex-mojo (`polarquant`)
 
-A pure-Mojo port of the remex Quantizer's encode + ADC search +
-decode path, shipped as a standalone CLI binary.
+A pure-Mojo port of the [remex](https://github.com/oaustegard/remex)
+Quantizer's encode, ADC search and decode paths, shipped as a standalone
+CLI binary. It reads `.npy` corpus files and writes the same `.pq`
+container that `remex.load_pq()` reads.
 
-Closes [issue #5](https://github.com/oaustegard/remex/issues/5),
-[issue #38](https://github.com/oaustegard/remex/issues/38), and
-[issue #39](https://github.com/oaustegard/remex/issues/39).
+This code lived in `remex/mojo/` until remex 1.0 and was moved here with
+its history. Bare issue and PR numbers below (#5, #40, PR #37, ...) refer to
+[oaustegard/remex](https://github.com/oaustegard/remex/issues).
+
+Requirements:
+
+- **Mojo 0.26.2.** Mojo 1.x does not parse this code yet (`MutExternalOrigin`
+  and friends are gone). `pip install "mojo==0.26.2.0"` installs it.
+- **remex >= 1.0** for the parity tests, which build their expected values
+  with the Python library. remex 1.0 changed the `rht` construction at
+  power-of-two `d` (remex #89), and this port follows it.
 
 ## What's here
 
 ```
-remex/mojo/
+remex-mojo/
 ├── README.md                # This file
 ├── polarquant.mojo          # CLI entrypoint (encode + search + decode)
 ├── src/
@@ -44,6 +54,8 @@ remex/mojo/
 │   ├── test_search_twostage.mojo   # top-k parity for search_twostage vs Python
 │   ├── test_ivf.mojo               # IVFCoarseIndex parity vs Python (cell IDs + search)
 │   ├── build_ivf_fixture.py        # Python fixture builder for test_ivf.mojo
+│   ├── build_fixtures.py           # builds every fixture, including the two above
+│   ├── run_all.sh                  # fixtures + every CPU test
 │   ├── test_gpu_encode.mojo        # encode parity for --device gpu (skipped without GPU)
 │   └── test_gpu_search.mojo        # ADC parity vs CPU for --device gpu (skipped without GPU)
 └── bench/
@@ -58,17 +70,20 @@ remex/mojo/
 
 ## Build
 
-The container needs the Mojo compiler (~500MB):
+Install the Mojo compiler (~500 MB) and, for the tests and benchmarks,
+the Python library:
 
 ```bash
-uv pip install --system --break-system-packages modular --no-deps
-uv pip install --system --break-system-packages mojo max
+pip install "mojo==0.26.2.0" "remex>=1.0"
 ```
 
-Build the CLI and the bench binaries:
+Build the CLI and the bench binaries from the repository root. The CLI
+links the GPU kernels, and on a host where Mojo 0.26.2 detects no GPU it
+stops with "Unknown GPU architecture detected". Name one with
+`--target-accelerator nvidia:80` and the build succeeds; the GPU paths
+still refuse at runtime and `--device auto` falls back to the CPU.
 
 ```bash
-cd remex/mojo
 mojo build -I . polarquant.mojo            -o polarquant
 mojo build -I . bench/bench_encode.mojo    -o bench/bench_encode
 mojo build -I . bench/bench_search.mojo    -o bench/bench_search
@@ -123,7 +138,13 @@ provides those two ways:
 `--seed` (numpy mode, the default) gives a self-contained Mojo workflow
 with end-to-end byte parity vs Python: `polarquant encode X.npy --bits 4
 --seed 42 -o out.pq` produces the same bytes as Python's
-`save_pq(Quantizer(d, 4, seed=42).encode(X))`. This was the goal of
+`save_pq(Quantizer(d, 4, seed=42, rotation="haar").encode(X))`.
+
+`--rotation` defaults to `haar` here. remex's own default became `rht` in
+1.0, so a Python `Quantizer` built without `rotation=` does not match a
+`polarquant` run without `--rotation`. The mismatch is loud: the `.pq`
+records its rotation, and decoding under the other one raises on both
+sides. This was the goal of
 issue #40 and uses the new `src/rng_numpy.mojo` module.
 
 `--seed --rng xoshiro` is the legacy fast path. Use it when you don't
@@ -185,131 +206,24 @@ stdlib precision limitation, not a remex algorithm issue.)
 ## Tests
 
 ```bash
-cd remex/mojo
-mojo run -I . tests/test_rng.mojo
-mojo run -I . tests/test_rng_numpy.mojo   # NumPy-bit-identical RNG (issue #40)
-mojo run -I . tests/test_rotation.mojo
-python3 tests/build_rht_fixture.py    # fixtures for the two RHT tests
-mojo run -I . tests/test_rht.mojo         # RHT byte parity vs Python
-mojo run -I . tests/test_rht_encode.mojo  # RHT encode parity, both routes
-mojo run -I . tests/test_codebook.mojo
-mojo run -I . tests/test_packing.mojo
-
-# Encode parity via --params (requires Python remex installed and fixtures generated):
-python -c "
-import numpy as np
-from remex import Quantizer, save_pq, save_params
-np.random.seed(0)
-X = np.random.randn(50, 16).astype(np.float32)
-np.save('/tmp/_parity_X.npy', X)
-q = Quantizer(d=16, bits=4, seed=42)
-save_params('/tmp/_parity.params', q)
-save_pq('/tmp/_parity_ref.pq', q.encode(X))
-"
-mojo run -I . tests/test_encode.mojo
-
-# Decode parity (full precision + coarse via nested codebook):
-python -c "
-import numpy as np
-from remex import Quantizer, save_pq, save_params
-
-np.random.seed(0)
-n, d, bits = 80, 16, 4
-coarse_precision = 2
-
-X = np.random.randn(n, d).astype(np.float32)
-q = Quantizer(d=d, bits=bits, seed=42)
-save_params('/tmp/_decode.params', q)
-cv = q.encode(X)
-save_pq('/tmp/_decode.pq', cv)
-
-np.save('/tmp/_decode_X.npy', X)
-np.save('/tmp/_decode_full.npy', q.decode(cv).astype(np.float32))
-np.save('/tmp/_decode_coarse.npy',
-        q.decode(cv, precision=coarse_precision).astype(np.float32))
-np.save('/tmp/_decode_meta.npy',
-        np.array([[coarse_precision]], dtype=np.float32))
-"
-mojo run -I . tests/test_decode.mojo
-
-# PackedVectors round-trip + at_precision parity:
-python -c "
-import numpy as np
-from remex import Quantizer, PackedVectors
-
-np.random.seed(0)
-n, d, bits = 80, 16, 4
-target_bits = 2
-
-X = np.random.randn(n, d).astype(np.float32)
-q = Quantizer(d=d, bits=bits, seed=42)
-cv = q.encode(X)
-packed = PackedVectors.from_compressed(cv)
-np.save('/tmp/_pv_indices.npy', cv.indices.astype(np.float32))
-np.save('/tmp/_pv_indices_at.npy',
-        packed.at_precision(target_bits).unpack_rows(0, n).astype(np.float32))
-np.save('/tmp/_pv_meta.npy',
-        np.array([[n, d, bits, target_bits]], dtype=np.float32))
-"
-mojo run -I . tests/test_packed_vectors.mojo
-
-# Encode parity via --seed (NumPy-compatible RNG path, issue #40):
-python -c "
-import numpy as np
-from remex import Quantizer, save_pq
-np.random.seed(0)
-X = np.random.randn(50, 16).astype(np.float32)
-np.save('/tmp/_seed_parity_X.npy', X)
-q = Quantizer(d=16, bits=4, seed=42)
-save_pq('/tmp/_seed_parity_ref.pq', q.encode(X))
-"
-mojo run -I . tests/test_encode_seed.mojo
-
-# search_twostage parity (also requires Python remex installed):
-python -c "
-import numpy as np
-from remex import Quantizer, save_pq, save_params
-
-np.random.seed(0)
-n, d, bits = 200, 16, 4
-n_q, k, candidates, coarse_precision = 8, 5, 50, 2
-
-X = np.random.randn(n, d).astype(np.float32)
-Q = np.random.randn(n_q, d).astype(np.float32)
-
-q = Quantizer(d=d, bits=bits, seed=42)
-save_params('/tmp/_twostage.params', q)
-cv = q.encode(X)
-save_pq('/tmp/_twostage.pq', cv)
-
-np.save('/tmp/_twostage_X.npy', X)
-np.save('/tmp/_twostage_Q.npy', Q)
-
-expected_idx = np.zeros((n_q, k), dtype=np.float32)
-expected_scores = np.zeros((n_q, k), dtype=np.float32)
-for i in range(n_q):
-    ti, ts = q.search_twostage(
-        cv, Q[i], k=k, candidates=candidates,
-        coarse_precision=coarse_precision)
-    expected_idx[i] = ti.astype(np.float32)
-    expected_scores[i] = ts
-
-meta = np.array([[k, candidates, coarse_precision, n_q]], dtype=np.float32)
-np.save('/tmp/_twostage_meta.npy', meta)
-np.save('/tmp/_twostage_expected_idx.npy', expected_idx)
-np.save('/tmp/_twostage_expected_scores.npy', expected_scores)
-"
-mojo run -I . tests/test_search_twostage.mojo
-
-# IVFCoarseIndex parity (cell IDs in both modes + search at full nprobe):
-python remex/mojo/tests/build_ivf_fixture.py
-mojo run -I . tests/test_ivf.mojo
+tests/run_all.sh            # builds the Python fixtures, then every CPU test
+RUN_GPU=1 tests/run_all.sh  # also the two GPU tests
 ```
+
+`tests/build_fixtures.py` writes everything the parity tests read into
+`/tmp`. Every `Quantizer` in it names `rotation=` (the `--seed` path's
+default is `haar`, remex's is `rht`) and sets `renorm=False`: this port
+multiplies raw norms and does not implement remex's reconstruction-length
+correction, which remex applies by default. Codes do not depend on
+`renorm`; decoded vectors and search scores do.
+
+The GPU tests do not compile on a host without a supported GPU under Mojo
+0.26.2 (the pass manager fails), which is why `run_all.sh` leaves them out
+unless asked.
 
 ## Benchmarks
 
 ```bash
-cd remex/mojo
 python bench/compare.py --n 10000 --d 384 --bits 4 --queries 100 --k 10
 
 # IVF latency at varying nprobe (auto doubling sweep up to n_cells).
@@ -317,7 +231,7 @@ python bench/compare.py --n 10000 --d 384 --bits 4 --queries 100 --k 10
     --n-bits 8 --mode rotated_prefix --candidates 500 --coarse-precision 2
 ```
 
-See `bench/RESULTS.md` (in this PR) for current numbers.
+See `bench/RESULTS.md` for current numbers.
 
 ## GPU / MAX path (`--device auto|cpu|gpu`)
 
@@ -348,16 +262,14 @@ broader GPU acceptance criteria.
 
 The GPU build needs MAX with a CUDA-capable backend. CPU-only hosts
 (M-series Macs, generic Linux without an NVIDIA GPU) can still build
-and run the binaries — the GPU paths just refuse at runtime via
-`is_gpu_available()`, which lets the test/bench drivers skip cleanly.
+and run the CLI with `--target-accelerator nvidia:80` (see § Build) — the
+GPU paths refuse at runtime via `is_gpu_available()`.
 
 ```bash
-# Same Mojo install as the CPU build.
-uv pip install --system --break-system-packages modular --no-deps
-uv pip install --system --break-system-packages mojo max
+# Same Mojo install as the CPU build, plus MAX for the GPU backend.
+pip install "mojo==0.26.2.0" max
 
 # Build the CLI + GPU bench binaries (same flags as CPU).
-cd remex/mojo
 mojo build -I . polarquant.mojo                -o polarquant
 mojo build -I . bench/bench_gpu_encode.mojo    -o bench/bench_gpu_encode
 mojo build -I . bench/bench_gpu_search.mojo    -o bench/bench_gpu_search
@@ -378,13 +290,12 @@ mojo build -I . bench/bench_gpu_search.mojo    -o bench/bench_gpu_search
 ### Tests
 
 ```bash
-# Skipped on CPU-only hosts; runs real parity checks on a GPU host.
-mojo run -I . tests/test_gpu_encode.mojo
-mojo run -I . tests/test_gpu_search.mojo
+# Needs a supported GPU: on a CPU-only host these fail to compile.
+RUN_GPU=1 tests/run_all.sh
 ```
 
 `test_gpu_encode.mojo` reuses the `/tmp/_parity_*` fixtures already
-generated for `test_encode.mojo` (see § Tests below). `test_gpu_search`
+generated for `test_encode.mojo` (see § Tests above). `test_gpu_search`
 is self-contained: it builds a synthetic corpus and asserts the GPU
 top-k matches the CPU `adc_search` baseline (rtol=1e-5 on scores,
 identical indices).

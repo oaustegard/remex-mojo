@@ -146,16 +146,21 @@ def largest_pow2_divisor(d: Int) -> Int:
 
 
 def rht_rounds(d: Int, B: Int) -> Int:
-    """Rounds of (permute -> sign flip -> FWHT): smallest k with B**k >= d.
+    """Rounds of (permute -> sign flip -> FWHT): smallest k >= 2 with
+    B**k >= d.
+
+    Never fewer than two. One round, which remex took at a power-of-two d
+    before 1.0, is a signed permutation after a fixed WHT; the codebook
+    cannot see a signed permutation, so every seed decoded alike (remex #89).
 
     Python spells this `max(2, ceil(log(d) / log(B)))`. The two agree for
     every even d (checked exhaustively to 20000): `B**k == d` forces
-    `B == d`, which takes the k = 1 branch, so in the other branch the log
+    `B == d`, which takes the k = 2 branch, so in the other branch the log
     quotient never lands on an integer and no rounding boundary is in
     play. The integer form is used here because it cannot drift with libm.
     """
     if B == d:
-        return 1
+        return 2
     var k = 1
     var p = B
     while p < d:

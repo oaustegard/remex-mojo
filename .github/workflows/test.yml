@@ -16,7 +16,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
 
       # Mojo is pinned: 1.x does not parse this code yet. remex comes from
       # its main branch so a change there that breaks parity shows up here.
